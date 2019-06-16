@@ -13,7 +13,7 @@ namespace CompositeAdapter
     public class MainActivity : AppCompatActivity
     {
         private int _count;
-        private readonly ObservableCollection<string> _strings = new ObservableCollection<string>(Enumerable.Range(1, 30).Select(x => x.ToString()));
+        private readonly ObservableCollection<string> _strings = new ObservableCollection<string>(Enumerable.Range(1, 5).Select(x => x.ToString()));
         private IUpdateable<string> _header;
         private IUpdateable<IList<string>> _list;
         
@@ -26,7 +26,10 @@ namespace CompositeAdapter
             rv.SetLayoutManager(new WtfLayoutManager(this));
             rv.AddItemDecoration(new DividerItemDecoration(this, RecyclerView.Vertical));
 
-            var adapter = new CompositeAdapter();
+            var adapter = new CompositeAdapter
+            {
+                HasStableIds = true // do not use if they are not really stable
+            };
 
             _header = adapter.WithView(Resource.Layout.header1)
                 .Holding(x => new {text = (TextView) x})
@@ -47,6 +50,7 @@ namespace CompositeAdapter
                 .Holding(
                     x => new {text = x.FindViewById<TextView>(Resource.Id.text)},
                     (x, v) => x.text.Text = v)
+                .WithId(x => x.GetHashCode()) // kek puk
                 .AsUpdateable;
                 
             adapter.WithView(Resource.Layout.footer);

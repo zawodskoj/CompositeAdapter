@@ -18,6 +18,7 @@ namespace CompositeAdapter
         public delegate void UnsubscriptionFunction<THolder>(THolder holder);
         public delegate void ValueSubscriptionFunction<THolder, TValue>(THolder holder, Func<TValue> value);
         public delegate void BindingFunction<THolder, TValue>(THolder holder, TValue value);
+        public delegate long IdGenerationFunction<TValue>(TValue value);
         
         public interface ISingleViewBuilder
         {
@@ -45,6 +46,9 @@ namespace CompositeAdapter
             IBindableBuilder<THolder, TItemValue, TUpdateValue> WithSubscriptions(
                 ValueSubscriptionFunction<THolder, TItemValue> subscribe,
                 UnsubscriptionFunction<THolder> unsubscribe);
+
+            IBindableBuilder<THolder, TItemValue, TUpdateValue> WithId(
+                IdGenerationFunction<TItemValue> generator);
 
             IUpdateable<TUpdateValue> AsUpdateable { get; }
         }
@@ -82,7 +86,7 @@ namespace CompositeAdapter
             {
                 Node.Subscriber = (h, f) => subscribe((THolder) h);
                 Node.Unsubscriber = h => unsubscribe((THolder) h);
-                return new NodeBuilder<THolder, TItemValue, TUpdateValue>(Node);
+                return this;
             }
 
             IBindableBuilder<THolder, T, T> ISingleViewBuilder<THolder>.Bindable<T>(BindingFunction<THolder, T> bind)
@@ -106,7 +110,13 @@ namespace CompositeAdapter
             {
                 Node.Subscriber = (h, f) => subscribe((THolder) h, () => (TItemValue) f());
                 Node.Unsubscriber = h => unsubscribe((THolder) h);
-                return new NodeBuilder<THolder, TItemValue, TUpdateValue>(Node);
+                return this;
+            }
+
+            public IBindableBuilder<THolder, TItemValue, TUpdateValue> WithId(IdGenerationFunction<TItemValue> generator)
+            {
+                Node.IdGenerator = v => generator((TItemValue) v);
+                return this;
             }
 
             void IUpdateable<TUpdateValue>.Update(TUpdateValue value)

@@ -47,6 +47,7 @@ namespace CompositeAdapter
             public Action<object, object> Binder { get; set; }
             public Action<object, Func<object>> Subscriber { get; set; }
             public Action<object> Unsubscriber { get; set; }
+            public Func<object, long> IdGenerator { get; set; }
 
             public bool IsSingleObject { get; set; }
 
@@ -74,7 +75,7 @@ namespace CompositeAdapter
 
             public int ItemCount => IsSingleObject ? 1 : Objects?.Count ?? 0;
             public int RealCount => _listItemCount;
-            
+
             public void CompleteListUpdate()
             {
                 OldObjects = _objects;
@@ -121,6 +122,43 @@ namespace CompositeAdapter
             var view = node.ViewFactory(LayoutInflater.FromContext(parent.Context), parent);
 
             return new NodeHolder(node, node.HolderFactory?.Invoke(view), view);
+        }
+
+        public override long GetItemId(int position)
+        {
+            const int shift = 56; 
+            var cnt = 0;
+
+            for (int i = 0; i < _nodes.Count; i++)
+            {
+                var node = _nodes[i];
+
+                if (cnt + node.ItemCount > position)
+                {
+                    if (node.IsSingleObject) 
+                    {
+                        return (long) ((ulong)i << shift); // todo    
+                    }
+                    else if (node.IdGenerator != null)
+                    {
+                        var generated = node.IdGenerator(node.Objects[position - cnt]);
+                        if (generated >> shift > 0)
+                        {
+                            throw new InvalidOperationException("Upper bits (" + (64 - shift) + ") are forbidden to use in item ids");
+                        }
+
+                        return (long) (((ulong)i << shift) | (ulong) generated);
+                    }
+                    else
+                    {
+                        return RecyclerView.NoId;
+                    }
+                }
+
+                cnt += node.ItemCount;
+            }
+
+            throw new IndexOutOfRangeException(nameof(position));
         }
 
         public override int GetItemViewType(int position)
