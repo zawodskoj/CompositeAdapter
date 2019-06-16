@@ -1,9 +1,13 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.Remoting.Channels;
 using Android.Arch.Lifecycle;
+using Android.Net.Wifi.Aware;
+using Android.Support.V7.Util;
 using Android.Support.V7.Widget;
 using Android.Views;
 using Object = Java.Lang.Object;
@@ -27,6 +31,7 @@ namespace CompositeAdapter
         private class Node
         {
             private int _listItemCount;
+            private IList _objects;
 
             public Node(CompositeAdapter adapter, Func<LayoutInflater, ViewGroup, View> viewFactory,
                 bool isSingleObject)
@@ -45,13 +50,34 @@ namespace CompositeAdapter
 
             public bool IsSingleObject { get; set; }
 
-            public IList Objects { get; set; }
+            public IList OldObjects { get; private set; }
+            public IList Objects
+            {
+                get => _objects;
+                set
+                {
+                    OldObjects = _objects;
+                    _objects = value;
+                    if (_objects is INotifyCollectionChanged oncc)
+                        oncc.CollectionChanged -= OnCollectionChanged;
+                    if (value is INotifyCollectionChanged nncc)
+                        nncc.CollectionChanged += OnCollectionChanged;
+                }
+            }
+
+            private void OnCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+            {
+                Adapter.NodeChanged(this, e);
+            }
+
             public object Object { get; set; }
 
-            public int ItemCount => IsSingleObject ? 1 : _listItemCount;
+            public int ItemCount => IsSingleObject ? 1 : Objects?.Count ?? 0;
+            public int RealCount => _listItemCount;
             
-            public void RefreshListItemCount()
+            public void CompleteListUpdate()
             {
+                OldObjects = _objects;
                 _listItemCount = Objects?.Count ?? 0;
             }
         }
@@ -138,7 +164,39 @@ namespace CompositeAdapter
             base.OnViewDetachedFromWindow(holder);
         }
 
-        private void NodeChanged(Node node)
+        private class DiffUtilCallback : DiffUtil.Callback
+        {
+            private readonly IList _oldObjects;
+            private readonly IList _objects;
+            private static readonly IList EmptyList = Array.Empty<object>();
+            
+            public DiffUtilCallback(IList oldObjects, IList objects)
+            {
+                _oldObjects = oldObjects ?? EmptyList;
+                _objects = objects ?? EmptyList;
+            }
+
+            public override bool AreContentsTheSame(int oldItemPosition, int newItemPosition)
+            {
+                var newObj = _objects[newItemPosition];
+                var oldObj = _oldObjects[newItemPosition];
+
+                return Equals(newObj, oldObj);
+            }
+
+            public override bool AreItemsTheSame(int oldItemPosition, int newItemPosition)
+            {
+                var newObj = _objects[newItemPosition];
+                var oldObj = _oldObjects[newItemPosition];
+
+                return ReferenceEquals(newObj, oldObj);
+            }
+
+            public override int NewListSize => _objects.Count;
+            public override int OldListSize => _oldObjects.Count;
+        }
+
+        private void NodeChanged(Node node, NotifyCollectionChangedEventArgs changeArgs = null)
         {
             var count = 0;
             
@@ -152,24 +210,93 @@ namespace CompositeAdapter
                     }
                     else
                     {
-                        // todo: real diff
-                        
-                        var prevCount = node.ItemCount;
-                        var newCount = node.Objects?.Count ?? 0;
-                        var diff = newCount - prevCount;
-                        if (diff > 0)
+                        if (changeArgs != null)
                         {
-                            NotifyItemRangeChanged(count, prevCount);   
-                            NotifyItemRangeInserted(count + prevCount, diff);   
+                            // we have actual changes
+
+                            switch (changeArgs.Action)
+                            {
+                                case NotifyCollectionChangedAction.Add:
+                                    NotifyItemRangeInserted(count + changeArgs.NewStartingIndex, changeArgs.NewItems.Count);
+                                    break;
+                                case NotifyCollectionChangedAction.Move:
+                                    var movedCount = changeArgs.NewItems.Count;
+
+                                    var sig = Math.Sign(changeArgs.OldStartingIndex - changeArgs.NewStartingIndex);
+                                    if (sig == 0) break;
+                                    
+                                    var startNew = sig > 0
+                                        ? changeArgs.NewStartingIndex
+                                        : changeArgs.NewStartingIndex + movedCount - 1;
+                                    var startOld = sig > 0
+                                        ? changeArgs.OldStartingIndex
+                                        : changeArgs.OldStartingIndex + movedCount - 1;
+
+                                    for (var cur = 0; cur < movedCount; cur++)
+                                    {
+                                        NotifyItemMoved(startOld + cur * sig, startNew + cur * sig);
+                                    }
+
+                                    break;
+                                case NotifyCollectionChangedAction.Remove:
+                                    NotifyItemRangeRemoved(count + changeArgs.OldStartingIndex, changeArgs.OldItems.Count);
+                                    break;
+                                case NotifyCollectionChangedAction.Replace:
+                                    if (changeArgs.NewStartingIndex == -1)
+                                        throw new InvalidOperationException("Unsupported NotifyCollectionChanged operation");
+
+                                    var diff = changeArgs.NewItems.Count - changeArgs.OldItems.Count;
+                                    if (diff > 0)
+                                    {
+                                        NotifyItemRangeChanged(count, changeArgs.NewStartingIndex);
+                                        NotifyItemRangeInserted(count + changeArgs.NewStartingIndex, diff);
+                                    }
+                                    else if (diff < 0)
+                                    {
+                                        NotifyItemRangeChanged(count, changeArgs.NewStartingIndex);
+                                        NotifyItemRangeRemoved(count + changeArgs.NewStartingIndex, -diff);
+                                    }
+                                    else
+                                    {
+                                        NotifyItemRangeChanged(count, changeArgs.NewStartingIndex);
+                                    }
+                                    break;
+                                case NotifyCollectionChangedAction.Reset:
+                                    Reset();
+                                    break;
+                            }
                         }
-                        else if (diff < 0)
+                        else if (!ReferenceEquals(node.Objects, node.OldObjects))
                         {
-                            NotifyItemRangeChanged(count, newCount);   
-                            NotifyItemRangeRemoved(count + newCount, -diff);   
+                            // we can diff
+
+                            var diff = DiffUtil.CalculateDiff(new DiffUtilCallback(node.OldObjects, node.Objects));
+                            diff.DispatchUpdatesTo(this);
                         }
                         else
                         {
-                            NotifyItemRangeChanged(count, newCount);
+                            Reset();
+                        }
+
+                        void Reset()
+                        {
+                            var prevCount = node.RealCount;
+                            var newCount = node.Objects?.Count ?? 0;
+                            var diff = newCount - prevCount;
+                            if (diff > 0)
+                            {
+                                NotifyItemRangeChanged(count, prevCount);
+                                NotifyItemRangeInserted(count + prevCount, diff);
+                            }
+                            else if (diff < 0)
+                            {
+                                NotifyItemRangeChanged(count, newCount);
+                                NotifyItemRangeRemoved(count + newCount, -diff);
+                            }
+                            else
+                            {
+                                NotifyItemRangeChanged(count, newCount);
+                            }
                         }
                     }
                 }

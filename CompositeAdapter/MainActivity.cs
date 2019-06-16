@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using Android.App;
 using Android.OS;
@@ -12,17 +13,17 @@ namespace CompositeAdapter
     public class MainActivity : AppCompatActivity
     {
         private int _count;
-        private List<string> _strings = Enumerable.Range(1, 30).Select(x => x.ToString()).ToList();
+        private readonly ObservableCollection<string> _strings = new ObservableCollection<string>(Enumerable.Range(1, 30).Select(x => x.ToString()));
         private IUpdateable<string> _header;
         private IUpdateable<IList<string>> _list;
-
+        
         protected override void OnCreate(Bundle savedInstanceState)
         {
             base.OnCreate(savedInstanceState);
             SetContentView(Resource.Layout.activity_main);
 
             var rv = FindViewById<RecyclerView>(Resource.Id.rv);
-            rv.SetLayoutManager(new LinearLayoutManager(this));
+            rv.SetLayoutManager(new WtfLayoutManager(this));
             rv.AddItemDecoration(new DividerItemDecoration(this, RecyclerView.Vertical));
 
             var adapter = new CompositeAdapter();

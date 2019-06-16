@@ -50,7 +50,7 @@ namespace CompositeAdapter
         }
 
         private struct Untyped {}
-        
+
         private class NodeBuilder<THolder, TItemValue, TUpdateValue> :
             IBindableBuilder<THolder, TItemValue, TUpdateValue>,
             ISingleViewBuilder,
@@ -70,13 +70,15 @@ namespace CompositeAdapter
                 Node = new Node(adapter, viewFactory, isSingleObject);
             }
 
-            ISingleViewBuilder<TNextHolder> ISingleViewBuilder.Holding<TNextHolder>(HolderFactory<TNextHolder> holderFactory)
+            ISingleViewBuilder<TNextHolder> ISingleViewBuilder.Holding<TNextHolder>(
+                HolderFactory<TNextHolder> holderFactory)
             {
                 Node.HolderFactory = v => holderFactory(v);
                 return new NodeBuilder<TNextHolder, TItemValue, TUpdateValue>(Node);
             }
 
-            ISingleViewBuilder<THolder> ISingleViewBuilder<THolder>.WithSubscriptions(SubscriptionFunction<THolder> subscribe, UnsubscriptionFunction<THolder> unsubscribe)
+            ISingleViewBuilder<THolder> ISingleViewBuilder<THolder>.WithSubscriptions(
+                SubscriptionFunction<THolder> subscribe, UnsubscriptionFunction<THolder> unsubscribe)
             {
                 Node.Subscriber = (h, f) => subscribe((THolder) h);
                 Node.Unsubscriber = h => unsubscribe((THolder) h);
@@ -89,7 +91,8 @@ namespace CompositeAdapter
                 return new NodeBuilder<THolder, T, T>(Node);
             }
 
-            IBindableBuilder<TNextHolder, TItemValue, IList<TItemValue>> IListBuilder<TItemValue>.Holding<TNextHolder>(HolderFactory<TNextHolder> holderFactory,
+            IBindableBuilder<TNextHolder, TItemValue, IList<TItemValue>> IListBuilder<TItemValue>.Holding<TNextHolder>(
+                HolderFactory<TNextHolder> holderFactory,
                 BindingFunction<TNextHolder, TItemValue> bind)
             {
                 Node.HolderFactory = v => holderFactory(v);
@@ -97,7 +100,9 @@ namespace CompositeAdapter
                 return new NodeBuilder<TNextHolder, TItemValue, IList<TItemValue>>(Node);
             }
 
-            IBindableBuilder<THolder, TItemValue, TUpdateValue> IBindableBuilder<THolder, TItemValue, TUpdateValue>.WithSubscriptions(ValueSubscriptionFunction<THolder, TItemValue> subscribe, UnsubscriptionFunction<THolder> unsubscribe)
+            IBindableBuilder<THolder, TItemValue, TUpdateValue> IBindableBuilder<THolder, TItemValue, TUpdateValue>.
+                WithSubscriptions(ValueSubscriptionFunction<THolder, TItemValue> subscribe,
+                    UnsubscriptionFunction<THolder> unsubscribe)
             {
                 Node.Subscriber = (h, f) => subscribe((THolder) h, () => (TItemValue) f());
                 Node.Unsubscriber = h => unsubscribe((THolder) h);
@@ -114,28 +119,15 @@ namespace CompositeAdapter
                 {
                     Node.Objects = (IList) value;
                 }
-                
+
                 Node.Adapter.NodeChanged(Node);
-                Node.RefreshListItemCount();
+                Node.CompleteListUpdate();
             }
-            
-            TUpdateValue IUpdateable<TUpdateValue>.CurrentValue => 
+
+            TUpdateValue IUpdateable<TUpdateValue>.CurrentValue =>
                 Node.IsSingleObject ? (TUpdateValue) Node.Objects : (TUpdateValue) Node.Object;
-            
+
             IUpdateable<TUpdateValue> IBindableBuilder<THolder, TItemValue, TUpdateValue>.AsUpdateable => this;
-        }
-
-        public ISingleViewBuilder WithView(View view)
-        {
-            var builder = new NodeBuilder<object, Untyped, Untyped>(
-                this, (inflater, parent) =>
-                {
-                    (view.Parent as ViewGroup)?.RemoveView(view);
-                    return view;
-                }, true);
-
-            AddNode(builder.Node);
-            return builder;
         }
         
         public ISingleViewBuilder WithView(int resourceId)
