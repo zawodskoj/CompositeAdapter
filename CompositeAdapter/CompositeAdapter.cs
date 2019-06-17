@@ -252,6 +252,8 @@ namespace CompositeAdapter
                         {
                             // we have actual changes
 
+                            node.CompleteListUpdate();
+
                             switch (changeArgs.Action)
                             {
                                 case NotifyCollectionChangedAction.Add:
@@ -337,11 +339,11 @@ namespace CompositeAdapter
                             }
                         }
                     }
+
+                    return;
                 }
-                else
-                {
-                    count += n.ItemCount;
-                }
+
+                count += n.ItemCount;
             }
         }
     }

@@ -23,7 +23,7 @@ namespace CompositeAdapter
             SetContentView(Resource.Layout.activity_main);
 
             var rv = FindViewById<RecyclerView>(Resource.Id.rv);
-            rv.SetLayoutManager(new WtfLayoutManager(this));
+            rv.SetLayoutManager(new LinearLayoutManager(this));
             rv.AddItemDecoration(new DividerItemDecoration(this, RecyclerView.Vertical));
 
             var adapter = new CompositeAdapter
@@ -62,7 +62,6 @@ namespace CompositeAdapter
         private void Increase()
         {
             _strings.Insert(0, "New " + _count);
-            _list?.Update(_strings);
             _count++;
             _header.Update("HEADER - " + _count);
         }
